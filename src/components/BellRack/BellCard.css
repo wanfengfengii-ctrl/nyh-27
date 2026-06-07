@@ -1,0 +1,8 @@
+.bell-card {
+  transition: all 0.2s ease;
+}
+
+.bell-card:hover {
+  box-shadow: var(--mantine-shadow-md) !important;
+  border-color: var(--mantine-color-bronze-4) !important;
+}
