@@ -73,7 +73,7 @@ interface MaintenancePanelProps {
   pendingTodoCount: number;
   onUpdateInfo: (bellId: string, updates: Partial<BellMaintenanceInfo>) => void;
   onAddRecord: (bellId: string, record: Omit<MaintenanceRecord, 'id' | 'bellId'>) => void;
-  onAddMedia: (bellId: string, media: Omit<InspectionMedia, 'id' | 'timestamp'>) => void;
+  onAddMedia: (bellId: string, media: Omit<InspectionMedia, 'id' | 'timestamp' | 'bellId'>) => void;
   onRemoveMedia: (mediaId: string) => void;
   onCompleteTodo: (todoId: string) => void;
 }
@@ -462,7 +462,7 @@ function MediaUploader({
 }: {
   bellId: string;
   media: InspectionMedia[];
-  onAddMedia: (bellId: string, media: Omit<InspectionMedia, 'id' | 'timestamp'>) => void;
+  onAddMedia: (bellId: string, media: Omit<InspectionMedia, 'id' | 'timestamp' | 'bellId'>) => void;
   onRemoveMedia: (mediaId: string) => void;
 }) {
   const imageInputRef = useRef<HTMLInputElement>(null);

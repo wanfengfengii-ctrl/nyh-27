@@ -134,6 +134,7 @@ export interface EnvironmentData {
 
 export interface InspectionMedia {
   id: string;
+  bellId: string;
   type: 'image' | 'audio';
   name: string;
   url: string;

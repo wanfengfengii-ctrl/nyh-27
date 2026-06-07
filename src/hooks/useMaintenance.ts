@@ -36,6 +36,16 @@ const getRiskLevel = (score: number): RiskLevel => {
   return 'critical';
 };
 
+const reduceWearLevel = (level: WearLevel): WearLevel => {
+  switch (level) {
+    case 'critical': return 'severe';
+    case 'severe': return 'moderate';
+    case 'moderate': return 'mild';
+    case 'mild': return 'none';
+    default: return 'none';
+  }
+};
+
 const getMaxDeviationCents = (bell: Bell): number => {
   const positions: StrikePosition[] = ['正鼓', '右鼓', '左鼓', '钲部'];
   let maxCents = 0;
@@ -438,10 +448,11 @@ export function useMaintenance(bells: Bell[]) {
     });
   }, [bells]);
 
-  const addInspectionMedia = useCallback((bellId: string, media: Omit<InspectionMedia, 'id' | 'timestamp'>) => {
+  const addInspectionMedia = useCallback((bellId: string, media: Omit<InspectionMedia, 'id' | 'timestamp' | 'bellId'>) => {
     setState((prev) => {
       const newMedia: InspectionMedia = {
         ...media,
+        bellId,
         id: generateId('media'),
         timestamp: new Date(),
       };
@@ -462,25 +473,115 @@ export function useMaintenance(bells: Bell[]) {
 
   const completeTodoItem = useCallback((todoId: string, completedBy: string = '当前用户') => {
     setState((prev) => {
-      const newTodoList = prev.todoList.map((todo) =>
-        todo.id === todoId
-          ? { ...todo, completed: true, completedAt: new Date(), completedBy }
-          : todo
+      const todo = prev.todoList.find((t) => t.id === todoId);
+      if (!todo || todo.completed) return prev;
+
+      const newTodoList = prev.todoList.map((t) =>
+        t.id === todoId
+          ? { ...t, completed: true, completedAt: new Date(), completedBy }
+          : t
       );
-      return { ...prev, todoList: newTodoList };
+
+      const newRecord: MaintenanceRecord = {
+        id: generateId('rec'),
+        bellId: todo.bellId,
+        type: todo.type,
+        description: `完成待办: ${todo.title}`,
+        timestamp: new Date(),
+        operator: completedBy,
+        notes: `来自维护待办清单，优先级: ${todo.priority === 'high' ? '高' : todo.priority === 'medium' ? '中' : '低'}`,
+        mediaIds: [],
+      };
+
+      const newRecords = [newRecord, ...prev.maintenanceRecords];
+
+      const info = prev.maintenanceInfo[todo.bellId];
+      if (!info) {
+        return { ...prev, todoList: newTodoList, maintenanceRecords: newRecords };
+      }
+
+      let updatedInfo = info;
+      if (todo.type === 'inspection') {
+        updatedInfo = { ...info, lastInspectionDate: new Date() };
+      }
+      if (['cleaning', 'repair', 'lubrication', 'tuning'].includes(todo.type)) {
+        updatedInfo = { ...updatedInfo, lastMaintenanceDate: new Date() };
+      }
+
+      const title = todo.title;
+      const newWearCondition = { ...updatedInfo.wearCondition };
+      let wearImproved = false;
+
+      if (title.includes('裂纹')) {
+        newWearCondition.crack = reduceWearLevel(newWearCondition.crack);
+        wearImproved = true;
+      }
+      if (title.includes('除锈') || title.includes('锈蚀')) {
+        newWearCondition.rust = reduceWearLevel(newWearCondition.rust);
+        wearImproved = true;
+      }
+      if (title.includes('磨损')) {
+        newWearCondition.wear = reduceWearLevel(newWearCondition.wear);
+        wearImproved = true;
+      }
+      if (title.includes('清洁') || title.includes('保养') || title.includes('定期')) {
+        if (newWearCondition.rust === 'mild') {
+          newWearCondition.rust = 'none';
+          wearImproved = true;
+        }
+        if (newWearCondition.wear === 'mild') {
+          newWearCondition.wear = 'none';
+          wearImproved = true;
+        }
+      }
+
+      if (wearImproved) {
+        updatedInfo = { ...updatedInfo, wearCondition: newWearCondition };
+      }
+
+      const newInfoMap = { ...prev.maintenanceInfo, [todo.bellId]: updatedInfo };
+
+      const bell = bells.find((b) => b.id === todo.bellId);
+      if (!bell) {
+        return {
+          ...prev,
+          todoList: newTodoList,
+          maintenanceRecords: newRecords,
+          maintenanceInfo: newInfoMap,
+        };
+      }
+
+      const newAssessment = calculateAssessment(bell, updatedInfo, newRecords);
+      const newAssessments = { ...prev.assessments, [todo.bellId]: newAssessment };
+      const generatedTodoList = generateTodoList(bells, newAssessments, newInfoMap);
+
+      const mergedTodoList = [
+        ...generatedTodoList,
+        ...newTodoList.filter((t) => t.completed),
+      ].sort((a, b) => {
+        const priorityOrder = { high: 0, medium: 1, low: 2 } as const;
+        const prioDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (prioDiff !== 0) return prioDiff;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      });
+
+      return {
+        ...prev,
+        todoList: mergedTodoList,
+        maintenanceRecords: newRecords,
+        maintenanceInfo: newInfoMap,
+        assessments: newAssessments,
+      };
     });
-  }, []);
+  }, [bells]);
 
   const getBellRecords = useCallback((bellId: string): MaintenanceRecord[] => {
     return state.maintenanceRecords.filter((r) => r.bellId === bellId);
   }, [state.maintenanceRecords]);
 
   const getBellMedia = useCallback((bellId: string): InspectionMedia[] => {
-    return state.inspectionMedia.filter((m) => {
-      const record = state.maintenanceRecords.find((r) => r.mediaIds.includes(m.id));
-      return record?.bellId === bellId;
-    });
-  }, [state.inspectionMedia, state.maintenanceRecords]);
+    return state.inspectionMedia.filter((m) => m.bellId === bellId);
+  }, [state.inspectionMedia]);
 
   const getAssessment = useCallback((bellId: string): BellMaintenanceAssessment | null => {
     return state.assessments[bellId] || null;
