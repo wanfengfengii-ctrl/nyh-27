@@ -1,5 +1,6 @@
-import { Container, Title, Text, Stack, Grid, Paper, Group, Badge, NumberInput, Tooltip } from '@mantine/core';
-import { Settings, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { Container, Title, Text, Stack, Grid, Paper, Group, Badge, NumberInput, Tabs } from '@mantine/core';
+import { Settings, CheckCircle2, AlertTriangle, Music, Wrench } from 'lucide-react';
 import { BellRack } from './components/BellRack/BellRack';
 import { BellEditor } from './components/BellEditor/BellEditor';
 import { FrequencyChart } from './components/FrequencyChart/FrequencyChart';
@@ -7,10 +8,14 @@ import { DeviationChart } from './components/DeviationChart/DeviationChart';
 import { SchemeManager } from './components/SchemeManager/SchemeManager';
 import { HistoryPanel } from './components/HistoryPanel/HistoryPanel';
 import { ImportExport } from './components/ImportExport/ImportExport';
+import { MaintenancePanel } from './components/MaintenancePanel/MaintenancePanel';
 import { useBellSet } from './hooks/useBellSet';
+import { useMaintenance } from './hooks/useMaintenance';
 import { getOutOfRangeCount } from './utils/cents';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<string | null>('tuning');
+
   const {
     schemes,
     activeScheme,
@@ -50,6 +55,22 @@ export default function App() {
     setSortOrder,
   } = useBellSet();
 
+  const {
+    overallRiskLevel,
+    highRiskCount,
+    pendingTodoCount,
+    todoList,
+    updateMaintenanceInfo,
+    addMaintenanceRecord,
+    addInspectionMedia,
+    removeInspectionMedia,
+    completeTodoItem,
+    getBellRecords,
+    getBellMedia,
+    getAssessment,
+    getMaintenanceInfo,
+  } = useMaintenance(bells);
+
   const outOfRangeCount = activeScheme
     ? getOutOfRangeCount(activeScheme.bells, currentStrikePosition, allowedDeviation)
     : 0;
@@ -70,13 +91,13 @@ export default function App() {
       <Container size="xl">
         <Stack gap="lg">
           <Paper p="md" radius="md" withBorder>
-            <Group justify="space-between" wrap="wrap">
+            <Group justify="space-between" wrap="wrap" mb="md">
               <div>
                 <Title order={1} size="h2" c="bronze.7" mb="xs">
-                  编钟校音与复核工作台
+                  编钟校音与维护管理系统
                 </Title>
                 <Text size="sm" c="dimmed">
-                  多方案管理 · 多位置校音 · 录音识频 · 复核留痕 · 批量导入导出
+                  多方案管理 · 多位置校音 · 录音识频 · 维护诊断 · 养护计划
                 </Text>
               </div>
               <Group>
@@ -103,9 +124,21 @@ export default function App() {
                 </Badge>
               </Group>
             </Group>
+
+            <Tabs value={activeTab} onChange={setActiveTab}>
+              <Tabs.List>
+                <Tabs.Tab value="tuning" leftSection={<Music size={16} />}>
+                  校音工作台
+                </Tabs.Tab>
+                <Tabs.Tab value="maintenance" leftSection={<Wrench size={16} />}>
+                  维护诊断与养护计划
+                </Tabs.Tab>
+              </Tabs.List>
+            </Tabs>
           </Paper>
 
-          <Grid gutter="lg">
+          {activeTab === 'tuning' && (
+            <Grid gutter="lg">
             <Grid.Col span={{ base: 12, md: 3, lg: 2 }}>
               <Stack gap="lg">
                 <SchemeManager
@@ -233,6 +266,26 @@ export default function App() {
               </Stack>
             </Grid.Col>
           </Grid>
+          )}
+
+          {activeTab === 'maintenance' && (
+            <MaintenancePanel
+              selectedBell={selectedBell}
+              maintenanceInfo={selectedBell ? getMaintenanceInfo(selectedBell.id) : null}
+              assessment={selectedBell ? getAssessment(selectedBell.id) : null}
+              records={selectedBell ? getBellRecords(selectedBell.id) : []}
+              todoList={todoList}
+              media={selectedBell ? getBellMedia(selectedBell.id) : []}
+              overallRiskLevel={overallRiskLevel}
+              highRiskCount={highRiskCount}
+              pendingTodoCount={pendingTodoCount}
+              onUpdateInfo={updateMaintenanceInfo}
+              onAddRecord={addMaintenanceRecord}
+              onAddMedia={addInspectionMedia}
+              onRemoveMedia={removeInspectionMedia}
+              onCompleteTodo={completeTodoItem}
+            />
+          )}
         </Stack>
       </Container>
     </div>
