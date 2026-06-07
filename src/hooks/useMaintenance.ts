@@ -12,6 +12,12 @@ import type {
   WearLevel,
   MaterialCondition,
   MaintenanceState,
+  WorkOrder,
+  WorkOrderStatus,
+  WorkOrderFilter,
+  WorkOrderType,
+  MaintenanceStatistics,
+  RiskComparison,
 } from '../types/bell';
 import { getBellCents } from '../utils/cents';
 
@@ -338,12 +344,85 @@ export function useMaintenance(bells: Bell[]) {
 
     const todoList = generateTodoList(bells, assessments, maintenanceInfo);
 
+    const workOrders: WorkOrder[] = [];
+    const responsiblePersons = ['张师傅', '李工', '王师傅', '赵老师'];
+
+    let workOrderIndex = 0;
+    for (const bell of bells) {
+      const assessment = assessments[bell.id];
+      const info = maintenanceInfo[bell.id];
+      if (!assessment || !info) continue;
+
+      if (assessment.riskLevel === 'critical' || assessment.riskLevel === 'high') {
+        const topSuggestion = assessment.suggestions[0];
+        if (topSuggestion) {
+          const statuses: WorkOrderStatus[] = ['pending_assign', 'in_progress', 'completed', 'reviewed'];
+          const status = statuses[workOrderIndex % 4];
+          const dueDate = new Date(Date.now() + (assessment.riskLevel === 'critical' ? 1 : 7) * 24 * 60 * 60 * 1000);
+          const createdAt = new Date(Date.now() - (workOrderIndex * 2 + 1) * 24 * 60 * 60 * 1000);
+
+          const workOrder: WorkOrder = {
+            id: generateId('wo'),
+            bellId: bell.id,
+            bellName: bell.name,
+            bellPosition: bell.position,
+            title: topSuggestion.title,
+            description: topSuggestion.description,
+            type: topSuggestion.type === 'immediate' ? 'repair' : 'inspection',
+            status,
+            priority: assessment.riskLevel === 'critical' ? 'high' : 'high',
+            riskLevel: assessment.riskLevel,
+            assignee: status === 'pending_assign' ? '' : responsiblePersons[workOrderIndex % responsiblePersons.length],
+            assignor: '系统管理员',
+            dueDate,
+            createdAt,
+            updatedAt: createdAt,
+            assignedAt: status !== 'pending_assign' ? new Date(createdAt.getTime() + 1 * 60 * 60 * 1000) : undefined,
+            startedAt: status === 'in_progress' || status === 'completed' || status === 'reviewed'
+              ? new Date(createdAt.getTime() + 2 * 60 * 60 * 1000)
+              : undefined,
+            completedAt: status === 'completed' || status === 'reviewed'
+              ? new Date(createdAt.getTime() + (workOrderIndex % 3 + 1) * 24 * 60 * 60 * 1000)
+              : undefined,
+            reviewedAt: status === 'reviewed'
+              ? new Date(createdAt.getTime() + (workOrderIndex % 3 + 2) * 24 * 60 * 60 * 1000)
+              : undefined,
+            completedBy: status === 'completed' || status === 'reviewed'
+              ? responsiblePersons[workOrderIndex % responsiblePersons.length]
+              : undefined,
+            reviewedBy: status === 'reviewed'
+              ? responsiblePersons[(workOrderIndex + 1) % responsiblePersons.length]
+              : undefined,
+            mediaIds: [],
+            preMaintenanceRiskScore: status === 'completed' || status === 'reviewed'
+              ? assessment.riskScore
+              : assessment.riskScore,
+            postMaintenanceRiskScore: status === 'completed' || status === 'reviewed'
+              ? Math.max(5, assessment.riskScore - 20 - workOrderIndex * 3)
+              : undefined,
+            effectEvaluation: status === 'completed' || status === 'reviewed'
+              ? '维护效果良好，风险等级下降'
+              : undefined,
+            reviewComment: status === 'reviewed'
+              ? '复核通过，维护质量达标'
+              : undefined,
+            sourceType: 'risk_auto',
+            suggestionId: topSuggestion.id,
+          };
+
+          workOrders.push(workOrder);
+          workOrderIndex++;
+        }
+      }
+    }
+
     return {
       maintenanceInfo,
       maintenanceRecords,
       inspectionMedia,
       assessments,
       todoList,
+      workOrders,
     };
   });
 
@@ -374,12 +453,101 @@ export function useMaintenance(bells: Bell[]) {
 
       const newTodoList = generateTodoList(bells, newAssessments, newInfo);
 
+      let newWorkOrders = prev.workOrders;
+      if (prev.workOrders.length === 0 && bells.length > 0) {
+        const workOrders: WorkOrder[] = [];
+        const responsiblePersons = ['张师傅', '李工', '王师傅', '赵老师'];
+        const workOrderTypes: WorkOrderType[] = ['inspection', 'cleaning', 'repair', 'lubrication', 'tuning', 'other'];
+        const statuses: WorkOrderStatus[] = ['pending_assign', 'in_progress', 'completed', 'reviewed'];
+        const priorities: ('high' | 'medium' | 'low')[] = ['low', 'medium', 'high', 'high'];
+
+        for (let i = 0; i < Math.min(bells.length, 8); i++) {
+          const bell = bells[i];
+          const assessment = newAssessments[bell.id];
+          const status = statuses[i % 4];
+          const type = workOrderTypes[i % workOrderTypes.length];
+          const priority = priorities[i % priorities.length];
+          const dueDate = new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000);
+          const createdAt = new Date(Date.now() - (i * 2 + 1) * 24 * 60 * 60 * 1000);
+
+          const titles: Record<WorkOrderType, string> = {
+            inspection: '定期检查与状态评估',
+            cleaning: '清洁保养',
+            repair: '修复受损部位',
+            lubrication: '润滑保养',
+            tuning: '音高校准调音',
+            other: '其他维护工作',
+          };
+
+          const descriptions: Record<WorkOrderType, string> = {
+            inspection: '对编钟进行全面检查，包括外观、结构、音质等方面的评估，记录当前状态并生成检查报告。',
+            cleaning: '对编钟进行专业清洁，去除灰尘、污渍和轻度氧化层，保持编钟外观整洁。',
+            repair: '修复编钟的受损部位，包括裂纹修复、变形校正、部件更换等工作，确保编钟结构安全。',
+            lubrication: '对编钟悬挂和连接部位进行润滑保养，减少摩擦和磨损，延长使用寿命。',
+            tuning: '对编钟进行专业调音，校正音高偏差，确保音准符合演奏要求。',
+            other: '其他类型的维护工作，根据实际情况进行处理。',
+          };
+
+          const workOrder: WorkOrder = {
+            id: generateId('wo'),
+            bellId: bell.id,
+            bellName: bell.name,
+            bellPosition: bell.position,
+            title: titles[type],
+            description: descriptions[type],
+            type,
+            status,
+            priority,
+            riskLevel: assessment?.riskLevel || 'medium',
+            assignee: status === 'pending_assign' ? '' : responsiblePersons[i % responsiblePersons.length],
+            assignor: '系统管理员',
+            dueDate,
+            createdAt,
+            updatedAt: createdAt,
+            assignedAt: status !== 'pending_assign' ? new Date(createdAt.getTime() + 1 * 60 * 60 * 1000) : undefined,
+            startedAt: status === 'in_progress' || status === 'completed' || status === 'reviewed'
+              ? new Date(createdAt.getTime() + 2 * 60 * 60 * 1000)
+              : undefined,
+            completedAt: status === 'completed' || status === 'reviewed'
+              ? new Date(createdAt.getTime() + (i % 3 + 1) * 24 * 60 * 60 * 1000)
+              : undefined,
+            reviewedAt: status === 'reviewed'
+              ? new Date(createdAt.getTime() + (i % 3 + 2) * 24 * 60 * 60 * 1000)
+              : undefined,
+            completedBy: status === 'completed' || status === 'reviewed'
+              ? responsiblePersons[i % responsiblePersons.length]
+              : undefined,
+            reviewedBy: status === 'reviewed'
+              ? responsiblePersons[(i + 1) % responsiblePersons.length]
+              : undefined,
+            mediaIds: [],
+            preMaintenanceRiskScore: assessment?.riskScore || 50,
+            postMaintenanceRiskScore: status === 'completed' || status === 'reviewed'
+              ? Math.max(5, (assessment?.riskScore || 50) - 20 - i * 3)
+              : undefined,
+            effectEvaluation: status === 'completed' || status === 'reviewed'
+              ? '维护效果良好，风险等级下降，编钟状态明显改善'
+              : undefined,
+            reviewComment: status === 'reviewed'
+              ? '复核通过，维护质量达标，符合验收标准'
+              : undefined,
+            sourceType: i < 3 ? 'risk_auto' : 'manual',
+            suggestionId: undefined,
+          };
+
+          workOrders.push(workOrder);
+        }
+        newWorkOrders = workOrders;
+        changed = true;
+      }
+
       if (!changed) return prev;
       return {
         ...prev,
         maintenanceInfo: newInfo,
         assessments: newAssessments,
         todoList: newTodoList,
+        workOrders: newWorkOrders,
       };
     });
   }, [bells]);
@@ -575,6 +743,530 @@ export function useMaintenance(bells: Bell[]) {
     });
   }, [bells]);
 
+  const createWorkOrder = useCallback((params: {
+    bellId: string;
+    title: string;
+    description: string;
+    type: WorkOrderType;
+    priority: 'high' | 'medium' | 'low';
+    dueDate: Date;
+    assignee?: string;
+    sourceType: WorkOrder['sourceType'];
+    suggestionId?: string;
+  }) => {
+    setState((prev) => {
+      const bell = bells.find((b) => b.id === params.bellId);
+      if (!bell) return prev;
+
+      const assessment = prev.assessments[params.bellId];
+      const info = prev.maintenanceInfo[params.bellId];
+
+      const newWorkOrder: WorkOrder = {
+        id: generateId('wo'),
+        bellId: params.bellId,
+        bellName: bell.name,
+        bellPosition: bell.position,
+        title: params.title,
+        description: params.description,
+        type: params.type,
+        status: params.assignee ? 'in_progress' : 'pending_assign',
+        priority: params.priority,
+        riskLevel: assessment?.riskLevel || 'medium',
+        assignee: params.assignee || '',
+        assignor: '系统管理员',
+        dueDate: params.dueDate,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        assignedAt: params.assignee ? new Date() : undefined,
+        startedAt: undefined,
+        completedAt: undefined,
+        reviewedAt: undefined,
+        completedBy: undefined,
+        reviewedBy: undefined,
+        mediaIds: [],
+        preMaintenanceRiskScore: assessment?.riskScore,
+        postMaintenanceRiskScore: undefined,
+        effectEvaluation: undefined,
+        reviewComment: undefined,
+        sourceType: params.sourceType,
+        suggestionId: params.suggestionId,
+      };
+
+      return {
+        ...prev,
+        workOrders: [newWorkOrder, ...prev.workOrders],
+      };
+    });
+  }, [bells]);
+
+  const assignWorkOrder = useCallback((workOrderId: string, assignee: string, assignor: string = '系统管理员') => {
+    setState((prev) => {
+      const workOrder = prev.workOrders.find((w) => w.id === workOrderId);
+      if (!workOrder || workOrder.status !== 'pending_assign') return prev;
+
+      const updatedWorkOrders = prev.workOrders.map((w) =>
+        w.id === workOrderId
+          ? {
+              ...w,
+              status: 'in_progress' as WorkOrderStatus,
+              assignee,
+              assignor,
+              assignedAt: new Date(),
+              startedAt: new Date(),
+              updatedAt: new Date(),
+            }
+          : w
+      );
+
+      return {
+        ...prev,
+        workOrders: updatedWorkOrders,
+      };
+    });
+  }, []);
+
+  const startWorkOrder = useCallback((workOrderId: string) => {
+    setState((prev) => {
+      const workOrder = prev.workOrders.find((w) => w.id === workOrderId);
+      if (!workOrder || (workOrder.status !== 'pending_assign' && workOrder.status !== 'in_progress')) return prev;
+
+      const updatedWorkOrders = prev.workOrders.map((w) =>
+        w.id === workOrderId
+          ? {
+              ...w,
+              status: 'in_progress' as WorkOrderStatus,
+              startedAt: w.startedAt || new Date(),
+              updatedAt: new Date(),
+            }
+          : w
+      );
+
+      return {
+        ...prev,
+        workOrders: updatedWorkOrders,
+      };
+    });
+  }, []);
+
+  const completeWorkOrder = useCallback((workOrderId: string, completedBy: string, effectEvaluation?: string, mediaIds?: string[]) => {
+    setState((prev) => {
+      const workOrder = prev.workOrders.find((w) => w.id === workOrderId);
+      if (!workOrder || workOrder.status !== 'in_progress') return prev;
+
+      const assessment = prev.assessments[workOrder.bellId];
+      const info = prev.maintenanceInfo[workOrder.bellId];
+
+      const newRecord: MaintenanceRecord = {
+        id: generateId('rec'),
+        bellId: workOrder.bellId,
+        type: workOrder.type,
+        description: `工单完成: ${workOrder.title}`,
+        timestamp: new Date(),
+        operator: completedBy,
+        notes: effectEvaluation,
+        mediaIds: mediaIds || [],
+      };
+
+      const newRecords = [newRecord, ...prev.maintenanceRecords];
+
+      let updatedInfo = info;
+      if (info) {
+        if (workOrder.type === 'inspection') {
+          updatedInfo = { ...info, lastInspectionDate: new Date() };
+        }
+        if (['cleaning', 'repair', 'lubrication', 'tuning'].includes(workOrder.type)) {
+          updatedInfo = { ...updatedInfo, lastMaintenanceDate: new Date() };
+        }
+
+        const title = workOrder.title;
+        const newWearCondition = { ...updatedInfo.wearCondition };
+        let wearImproved = false;
+
+        if (title.includes('裂纹')) {
+          newWearCondition.crack = reduceWearLevel(newWearCondition.crack);
+          wearImproved = true;
+        }
+        if (title.includes('除锈') || title.includes('锈蚀')) {
+          newWearCondition.rust = reduceWearLevel(newWearCondition.rust);
+          wearImproved = true;
+        }
+        if (title.includes('磨损')) {
+          newWearCondition.wear = reduceWearLevel(newWearCondition.wear);
+          wearImproved = true;
+        }
+        if (title.includes('清洁') || title.includes('保养') || title.includes('定期')) {
+          if (newWearCondition.rust === 'mild') {
+            newWearCondition.rust = 'none';
+            wearImproved = true;
+          }
+          if (newWearCondition.wear === 'mild') {
+            newWearCondition.wear = 'none';
+            wearImproved = true;
+          }
+        }
+
+        if (wearImproved) {
+          updatedInfo = { ...updatedInfo, wearCondition: newWearCondition };
+        }
+      }
+
+      const newInfoMap = info ? { ...prev.maintenanceInfo, [workOrder.bellId]: updatedInfo } : prev.maintenanceInfo;
+
+      const bell = bells.find((b) => b.id === workOrder.bellId);
+      let newAssessments = prev.assessments;
+      if (bell && updatedInfo) {
+        const newAssessment = calculateAssessment(bell, updatedInfo, newRecords);
+        newAssessments = { ...prev.assessments, [workOrder.bellId]: newAssessment };
+      }
+
+      const postRiskScore = newAssessments[workOrder.bellId]?.riskScore;
+
+      const updatedWorkOrders = prev.workOrders.map((w) =>
+        w.id === workOrderId
+          ? {
+              ...w,
+              status: 'completed' as WorkOrderStatus,
+              completedAt: new Date(),
+              completedBy,
+              maintenanceRecordId: newRecord.id,
+              mediaIds: mediaIds || w.mediaIds,
+              postMaintenanceRiskScore: postRiskScore,
+              effectEvaluation: effectEvaluation || w.effectEvaluation,
+              updatedAt: new Date(),
+            }
+          : w
+      );
+
+      const newTodoList = generateTodoList(bells, newAssessments, newInfoMap);
+
+      return {
+        ...prev,
+        workOrders: updatedWorkOrders,
+        maintenanceRecords: newRecords,
+        maintenanceInfo: newInfoMap,
+        assessments: newAssessments,
+        todoList: newTodoList,
+      };
+    });
+  }, [bells]);
+
+  const reviewWorkOrder = useCallback((workOrderId: string, reviewedBy: string, reviewComment: string, passed: boolean) => {
+    setState((prev) => {
+      const workOrder = prev.workOrders.find((w) => w.id === workOrderId);
+      if (!workOrder || workOrder.status !== 'completed') return prev;
+
+      if (!passed) {
+        const updatedWorkOrders = prev.workOrders.map((w) =>
+          w.id === workOrderId
+            ? {
+                ...w,
+                status: 'in_progress' as WorkOrderStatus,
+                reviewComment,
+                reviewedBy,
+                updatedAt: new Date(),
+              }
+            : w
+        );
+        return { ...prev, workOrders: updatedWorkOrders };
+      }
+
+      const updatedWorkOrders = prev.workOrders.map((w) =>
+        w.id === workOrderId
+          ? {
+              ...w,
+              status: 'reviewed' as WorkOrderStatus,
+              reviewedAt: new Date(),
+              reviewedBy,
+              reviewComment,
+              updatedAt: new Date(),
+            }
+          : w
+      );
+
+      return {
+        ...prev,
+        workOrders: updatedWorkOrders,
+      };
+    });
+  }, []);
+
+  const createWorkOrderFromRisk = useCallback((bellId: string) => {
+    setState((prev) => {
+      const bell = bells.find((b) => b.id === bellId);
+      const assessment = prev.assessments[bellId];
+      const info = prev.maintenanceInfo[bellId];
+
+      if (!bell || !assessment) return prev;
+
+      const existingOrder = prev.workOrders.find(
+        (w) => w.bellId === bellId && (w.status === 'pending_assign' || w.status === 'in_progress')
+      );
+      if (existingOrder) return prev;
+
+      const topSuggestion = assessment.suggestions[0];
+      if (!topSuggestion) return prev;
+
+      const priority = assessment.riskLevel === 'critical' || assessment.riskLevel === 'high' ? 'high' : 'medium';
+      const dueDays = assessment.riskLevel === 'critical' ? 1 : assessment.riskLevel === 'high' ? 3 : 7;
+      const dueDate = new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000);
+
+      const newWorkOrder: WorkOrder = {
+        id: generateId('wo'),
+        bellId,
+        bellName: bell.name,
+        bellPosition: bell.position,
+        title: topSuggestion.title,
+        description: topSuggestion.description,
+        type: topSuggestion.type === 'immediate' ? 'repair' : 'inspection',
+        status: 'pending_assign',
+        priority,
+        riskLevel: assessment.riskLevel,
+        assignee: '',
+        assignor: '系统管理员',
+        dueDate,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        mediaIds: [],
+        preMaintenanceRiskScore: assessment.riskScore,
+        sourceType: 'risk_auto',
+        suggestionId: topSuggestion.id,
+      };
+
+      return {
+        ...prev,
+        workOrders: [newWorkOrder, ...prev.workOrders],
+      };
+    });
+  }, [bells]);
+
+  const batchCreateWorkOrdersFromHighRisk = useCallback(() => {
+    setState((prev) => {
+      const highRiskBells = Object.entries(prev.assessments)
+        .filter(([, assessment]) => assessment.riskLevel === 'high' || assessment.riskLevel === 'critical')
+        .map(([bellId, assessment]) => ({ bellId, assessment }));
+
+      const newWorkOrders: WorkOrder[] = [];
+
+      for (const { bellId, assessment } of highRiskBells) {
+        const bell = bells.find((b) => b.id === bellId);
+        if (!bell) continue;
+
+        const existingOrder = prev.workOrders.find(
+          (w) => w.bellId === bellId && (w.status === 'pending_assign' || w.status === 'in_progress')
+        );
+        if (existingOrder) continue;
+
+        const topSuggestion = assessment.suggestions[0];
+        if (!topSuggestion) continue;
+
+        const priority = assessment.riskLevel === 'critical' ? 'high' : 'high';
+        const dueDays = assessment.riskLevel === 'critical' ? 1 : 3;
+        const dueDate = new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000);
+
+        newWorkOrders.push({
+          id: generateId('wo'),
+          bellId,
+          bellName: bell.name,
+          bellPosition: bell.position,
+          title: topSuggestion.title,
+          description: topSuggestion.description,
+          type: topSuggestion.type === 'immediate' ? 'repair' : 'inspection',
+          status: 'pending_assign',
+          priority,
+          riskLevel: assessment.riskLevel,
+          assignee: '',
+          assignor: '系统管理员',
+          dueDate,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          mediaIds: [],
+          preMaintenanceRiskScore: assessment.riskScore,
+          sourceType: 'risk_auto',
+          suggestionId: topSuggestion.id,
+        });
+      }
+
+      return {
+        ...prev,
+        workOrders: [...newWorkOrders, ...prev.workOrders],
+      };
+    });
+  }, [bells]);
+
+  const filterWorkOrders = useCallback((filter: WorkOrderFilter): WorkOrder[] => {
+    return state.workOrders.filter((wo) => {
+      if (filter.status && filter.status.length > 0 && !filter.status.includes(wo.status)) return false;
+      if (filter.assignee && wo.assignee !== filter.assignee) return false;
+      if (filter.riskLevel && filter.riskLevel.length > 0 && !filter.riskLevel.includes(wo.riskLevel)) return false;
+      if (filter.priority && filter.priority.length > 0 && !filter.priority.includes(wo.priority)) return false;
+      if (filter.type && filter.type.length > 0 && !filter.type.includes(wo.type)) return false;
+      if (filter.dueDateFrom && new Date(wo.dueDate) < new Date(filter.dueDateFrom)) return false;
+      if (filter.dueDateTo && new Date(wo.dueDate) > new Date(filter.dueDateTo)) return false;
+      if (filter.keyword) {
+        const keyword = filter.keyword.toLowerCase();
+        if (
+          !wo.title.toLowerCase().includes(keyword) &&
+          !wo.bellName.toLowerCase().includes(keyword) &&
+          !wo.description.toLowerCase().includes(keyword)
+        ) return false;
+      }
+      return true;
+    });
+  }, [state.workOrders]);
+
+  const getWorkOrdersByBell = useCallback((bellId: string): WorkOrder[] => {
+    return state.workOrders.filter((w) => w.bellId === bellId);
+  }, [state.workOrders]);
+
+  const getWorkOrderById = useCallback((workOrderId: string): WorkOrder | null => {
+    return state.workOrders.find((w) => w.id === workOrderId) || null;
+  }, [state.workOrders]);
+
+  const addMediaToWorkOrder = useCallback((workOrderId: string, mediaId: string) => {
+    setState((prev) => ({
+      ...prev,
+      workOrders: prev.workOrders.map((w) =>
+        w.id === workOrderId && !w.mediaIds.includes(mediaId)
+          ? { ...w, mediaIds: [...w.mediaIds, mediaId], updatedAt: new Date() }
+          : w
+      ),
+    }));
+  }, []);
+
+  const getRiskComparisons = useCallback((): RiskComparison[] => {
+    const completedOrders = state.workOrders.filter(
+      (w) => (w.status === 'completed' || w.status === 'reviewed') &&
+        w.preMaintenanceRiskScore !== undefined &&
+        w.postMaintenanceRiskScore !== undefined
+    );
+
+    return completedOrders.map((wo) => {
+      const preLevel = getRiskLevel(wo.preMaintenanceRiskScore!);
+      const postLevel = getRiskLevel(wo.postMaintenanceRiskScore!);
+      const scoreChange = wo.postMaintenanceRiskScore! - wo.preMaintenanceRiskScore!;
+      const levelOrder = ['low', 'medium', 'high', 'critical'];
+      const levelImproved = levelOrder.indexOf(postLevel) < levelOrder.indexOf(preLevel);
+
+      return {
+        bellId: wo.bellId,
+        bellName: wo.bellName,
+        preRiskScore: wo.preMaintenanceRiskScore!,
+        preRiskLevel: preLevel,
+        postRiskScore: wo.postMaintenanceRiskScore!,
+        postRiskLevel: postLevel,
+        scoreChange,
+        levelImproved,
+        workOrderId: wo.id,
+        workOrderTitle: wo.title,
+        completedDate: wo.completedAt || new Date(),
+      };
+    }).sort((a, b) => b.completedDate.getTime() - a.completedDate.getTime());
+  }, [state.workOrders]);
+
+  const getStatistics = useCallback((): MaintenanceStatistics => {
+    const workOrders = state.workOrders;
+    const now = Date.now();
+
+    const overdueCount = workOrders.filter(
+      (w) => (w.status === 'pending_assign' || w.status === 'in_progress') &&
+        new Date(w.dueDate).getTime() < now
+    ).length;
+
+    const completedOrders = workOrders.filter((w) => w.completedAt && w.startedAt);
+    const avgCompletionDays = completedOrders.length > 0
+      ? completedOrders.reduce((sum, w) => {
+          const days = (new Date(w.completedAt!).getTime() - new Date(w.startedAt!).getTime()) / (1000 * 60 * 60 * 24);
+          return sum + days;
+        }, 0) / completedOrders.length
+      : 0;
+
+    const workOrdersByType: Record<WorkOrderType, number> = {
+      inspection: 0,
+      cleaning: 0,
+      repair: 0,
+      lubrication: 0,
+      tuning: 0,
+      other: 0,
+    };
+    workOrders.forEach((w) => {
+      workOrdersByType[w.type] = (workOrdersByType[w.type] || 0) + 1;
+    });
+
+    const workOrdersByAssignee: Record<string, number> = {};
+    workOrders.forEach((w) => {
+      if (w.assignee) {
+        workOrdersByAssignee[w.assignee] = (workOrdersByAssignee[w.assignee] || 0) + 1;
+      }
+    });
+
+    const workOrdersByRiskLevel: Record<RiskLevel, number> = {
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 0,
+    };
+    workOrders.forEach((w) => {
+      workOrdersByRiskLevel[w.riskLevel] = (workOrdersByRiskLevel[w.riskLevel] || 0) + 1;
+    });
+
+    const monthlyTrend: { month: string; completed: number; created: number }[] = [];
+    const monthLabels = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+    const currentMonth = new Date().getMonth();
+
+    for (let i = 5; i >= 0; i--) {
+      const monthIndex = (currentMonth - i + 12) % 12;
+      const year = new Date().getFullYear() - (currentMonth - i < 0 ? 1 : 0);
+      const monthStart = new Date(year, monthIndex, 1).getTime();
+      const monthEnd = new Date(year, monthIndex + 1, 0, 23, 59, 59).getTime();
+
+      const created = workOrders.filter(
+        (w) => new Date(w.createdAt).getTime() >= monthStart && new Date(w.createdAt).getTime() <= monthEnd
+      ).length;
+
+      const completed = workOrders.filter(
+        (w) => w.completedAt && new Date(w.completedAt).getTime() >= monthStart && new Date(w.completedAt).getTime() <= monthEnd
+      ).length;
+
+      monthlyTrend.push({ month: monthLabels[monthIndex], completed, created });
+    }
+
+    const reviewedOrders = workOrders.filter(
+      (w) => w.status === 'reviewed' && w.postMaintenanceRiskScore !== undefined && w.preMaintenanceRiskScore !== undefined
+    );
+    const effectEvaluationAvg = reviewedOrders.length > 0
+      ? reviewedOrders.reduce((sum, w) => {
+          const improvement = w.preMaintenanceRiskScore! - w.postMaintenanceRiskScore!;
+          return sum + improvement;
+        }, 0) / reviewedOrders.length
+      : 0;
+
+    const highRiskBells = Object.values(state.assessments).filter((a) => a.riskLevel === 'high').length;
+    const criticalRiskBells = Object.values(state.assessments).filter((a) => a.riskLevel === 'critical').length;
+    const allScores = Object.values(state.assessments).map((a) => a.riskScore);
+    const overallRiskScore = allScores.length > 0
+      ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+      : 0;
+
+    return {
+      totalWorkOrders: workOrders.length,
+      pendingAssignCount: workOrders.filter((w) => w.status === 'pending_assign').length,
+      inProgressCount: workOrders.filter((w) => w.status === 'in_progress').length,
+      completedCount: workOrders.filter((w) => w.status === 'completed').length,
+      reviewedCount: workOrders.filter((w) => w.status === 'reviewed').length,
+      overdueCount,
+      avgCompletionDays: Math.round(avgCompletionDays * 10) / 10,
+      totalMaintenanceRecords: state.maintenanceRecords.length,
+      highRiskBells,
+      criticalRiskBells,
+      overallRiskScore,
+      workOrdersByType,
+      workOrdersByAssignee,
+      workOrdersByRiskLevel,
+      monthlyTrend,
+      effectEvaluationAvg: Math.round(effectEvaluationAvg * 10) / 10,
+    };
+  }, [state.workOrders, state.maintenanceRecords, state.assessments]);
+
   const getBellRecords = useCallback((bellId: string): MaintenanceRecord[] => {
     return state.maintenanceRecords.filter((r) => r.bellId === bellId);
   }, [state.maintenanceRecords]);
@@ -615,6 +1307,7 @@ export function useMaintenance(bells: Bell[]) {
     inspectionMedia: state.inspectionMedia,
     assessments: state.assessments,
     todoList: state.todoList,
+    workOrders: state.workOrders,
     overallRiskLevel,
     highRiskCount,
     pendingTodoCount,
@@ -627,5 +1320,18 @@ export function useMaintenance(bells: Bell[]) {
     getBellMedia,
     getAssessment,
     getMaintenanceInfo,
+    createWorkOrder,
+    assignWorkOrder,
+    startWorkOrder,
+    completeWorkOrder,
+    reviewWorkOrder,
+    createWorkOrderFromRisk,
+    batchCreateWorkOrdersFromHighRisk,
+    filterWorkOrders,
+    getWorkOrdersByBell,
+    getWorkOrderById,
+    addMediaToWorkOrder,
+    getRiskComparisons,
+    getStatistics,
   };
 }

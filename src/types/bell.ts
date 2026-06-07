@@ -228,4 +228,102 @@ export interface MaintenanceState {
   inspectionMedia: InspectionMedia[];
   assessments: Record<string, BellMaintenanceAssessment>;
   todoList: MaintenanceTodoItem[];
+  workOrders: WorkOrder[];
+}
+
+export type WorkOrderStatus = 'pending_assign' | 'in_progress' | 'completed' | 'reviewed';
+
+export const WORK_ORDER_STATUSES: { value: WorkOrderStatus; label: string; color: string }[] = [
+  { value: 'pending_assign', label: '待派单', color: 'yellow' },
+  { value: 'in_progress', label: '处理中', color: 'blue' },
+  { value: 'completed', label: '已完成', color: 'green' },
+  { value: 'reviewed', label: '已复核', color: 'teal' },
+];
+
+export type WorkOrderType = 'inspection' | 'cleaning' | 'repair' | 'lubrication' | 'tuning' | 'other';
+
+export const WORK_ORDER_TYPES: { value: WorkOrderType; label: string; color: string }[] = [
+  { value: 'inspection', label: '检测', color: 'blue' },
+  { value: 'cleaning', label: '清洁', color: 'green' },
+  { value: 'repair', label: '修复', color: 'orange' },
+  { value: 'lubrication', label: '润滑', color: 'yellow' },
+  { value: 'tuning', label: '校音', color: 'purple' },
+  { value: 'other', label: '其他', color: 'gray' },
+];
+
+export interface WorkOrder {
+  id: string;
+  bellId: string;
+  bellName: string;
+  bellPosition: number;
+  title: string;
+  description: string;
+  type: WorkOrderType;
+  status: WorkOrderStatus;
+  priority: 'high' | 'medium' | 'low';
+  riskLevel: RiskLevel;
+  assignee: string;
+  assignor: string;
+  dueDate: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  assignedAt?: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+  reviewedAt?: Date;
+  completedBy?: string;
+  reviewedBy?: string;
+  maintenanceRecordId?: string;
+  mediaIds: string[];
+  notes?: string;
+  preMaintenanceRiskScore?: number;
+  postMaintenanceRiskScore?: number;
+  effectEvaluation?: string;
+  reviewComment?: string;
+  sourceType: 'manual' | 'risk_auto' | 'maintenance_cycle' | 'suggestion';
+  suggestionId?: string;
+}
+
+export interface WorkOrderFilter {
+  status?: WorkOrderStatus[];
+  assignee?: string;
+  riskLevel?: RiskLevel[];
+  dueDateFrom?: Date;
+  dueDateTo?: Date;
+  priority?: ('high' | 'medium' | 'low')[];
+  type?: WorkOrderType[];
+  keyword?: string;
+}
+
+export interface MaintenanceStatistics {
+  totalWorkOrders: number;
+  pendingAssignCount: number;
+  inProgressCount: number;
+  completedCount: number;
+  reviewedCount: number;
+  overdueCount: number;
+  avgCompletionDays: number;
+  totalMaintenanceRecords: number;
+  highRiskBells: number;
+  criticalRiskBells: number;
+  overallRiskScore: number;
+  workOrdersByType: Record<WorkOrderType, number>;
+  workOrdersByAssignee: Record<string, number>;
+  workOrdersByRiskLevel: Record<RiskLevel, number>;
+  monthlyTrend: { month: string; completed: number; created: number }[];
+  effectEvaluationAvg: number;
+}
+
+export interface RiskComparison {
+  bellId: string;
+  bellName: string;
+  preRiskScore: number;
+  preRiskLevel: RiskLevel;
+  postRiskScore: number;
+  postRiskLevel: RiskLevel;
+  scoreChange: number;
+  levelImproved: boolean;
+  workOrderId: string;
+  workOrderTitle: string;
+  completedDate: Date;
 }

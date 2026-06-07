@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Container, Title, Text, Stack, Grid, Paper, Group, Badge, NumberInput, Tabs } from '@mantine/core';
-import { Settings, CheckCircle2, AlertTriangle, Music, Wrench } from 'lucide-react';
+import { Settings, CheckCircle2, AlertTriangle, Music, Wrench, ClipboardList, BarChart3 } from 'lucide-react';
 import { BellRack } from './components/BellRack/BellRack';
 import { BellEditor } from './components/BellEditor/BellEditor';
 import { FrequencyChart } from './components/FrequencyChart/FrequencyChart';
@@ -9,12 +9,15 @@ import { SchemeManager } from './components/SchemeManager/SchemeManager';
 import { HistoryPanel } from './components/HistoryPanel/HistoryPanel';
 import { ImportExport } from './components/ImportExport/ImportExport';
 import { MaintenancePanel } from './components/MaintenancePanel/MaintenancePanel';
+import { WorkOrderPanel } from './components/WorkOrderPanel/WorkOrderPanel';
+import { StatisticsDashboard } from './components/StatisticsDashboard/StatisticsDashboard';
 import { useBellSet } from './hooks/useBellSet';
 import { useMaintenance } from './hooks/useMaintenance';
 import { getOutOfRangeCount } from './utils/cents';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string | null>('tuning');
+  const [maintenanceTab, setMaintenanceTab] = useState<string | null>('diagnosis');
 
   const {
     schemes,
@@ -60,6 +63,8 @@ export default function App() {
     highRiskCount,
     pendingTodoCount,
     todoList,
+    workOrders,
+    inspectionMedia,
     updateMaintenanceInfo,
     addMaintenanceRecord,
     addInspectionMedia,
@@ -69,6 +74,19 @@ export default function App() {
     getBellMedia,
     getAssessment,
     getMaintenanceInfo,
+    createWorkOrder,
+    assignWorkOrder,
+    startWorkOrder,
+    completeWorkOrder,
+    reviewWorkOrder,
+    createWorkOrderFromRisk,
+    batchCreateWorkOrdersFromHighRisk,
+    filterWorkOrders,
+    getWorkOrdersByBell,
+    getWorkOrderById,
+    addMediaToWorkOrder,
+    getRiskComparisons,
+    getStatistics,
   } = useMaintenance(bells);
 
   const outOfRangeCount = activeScheme
@@ -269,22 +287,66 @@ export default function App() {
           )}
 
           {activeTab === 'maintenance' && (
-            <MaintenancePanel
-              selectedBell={selectedBell}
-              maintenanceInfo={selectedBell ? getMaintenanceInfo(selectedBell.id) : null}
-              assessment={selectedBell ? getAssessment(selectedBell.id) : null}
-              records={selectedBell ? getBellRecords(selectedBell.id) : []}
-              todoList={todoList}
-              media={selectedBell ? getBellMedia(selectedBell.id) : []}
-              overallRiskLevel={overallRiskLevel}
-              highRiskCount={highRiskCount}
-              pendingTodoCount={pendingTodoCount}
-              onUpdateInfo={updateMaintenanceInfo}
-              onAddRecord={addMaintenanceRecord}
-              onAddMedia={addInspectionMedia}
-              onRemoveMedia={removeInspectionMedia}
-              onCompleteTodo={completeTodoItem}
-            />
+            <Stack gap="md">
+              <Paper p="md" radius="md" withBorder>
+                <Tabs value={maintenanceTab} onChange={setMaintenanceTab}>
+                  <Tabs.List>
+                    <Tabs.Tab value="diagnosis" leftSection={<Wrench size={16} />}>
+                      维护诊断
+                    </Tabs.Tab>
+                    <Tabs.Tab value="workorders" leftSection={<ClipboardList size={16} />}>
+                      工单管理
+                    </Tabs.Tab>
+                    <Tabs.Tab value="statistics" leftSection={<BarChart3 size={16} />}>
+                      统计看板
+                    </Tabs.Tab>
+                  </Tabs.List>
+                </Tabs>
+              </Paper>
+
+              {maintenanceTab === 'diagnosis' && (
+                <MaintenancePanel
+                  selectedBell={selectedBell}
+                  maintenanceInfo={selectedBell ? getMaintenanceInfo(selectedBell.id) : null}
+                  assessment={selectedBell ? getAssessment(selectedBell.id) : null}
+                  records={selectedBell ? getBellRecords(selectedBell.id) : []}
+                  todoList={todoList}
+                  media={selectedBell ? getBellMedia(selectedBell.id) : []}
+                  overallRiskLevel={overallRiskLevel}
+                  highRiskCount={highRiskCount}
+                  pendingTodoCount={pendingTodoCount}
+                  onUpdateInfo={updateMaintenanceInfo}
+                  onAddRecord={addMaintenanceRecord}
+                  onAddMedia={addInspectionMedia}
+                  onRemoveMedia={removeInspectionMedia}
+                  onCompleteTodo={completeTodoItem}
+                />
+              )}
+
+              {maintenanceTab === 'workorders' && (
+                <WorkOrderPanel
+                  workOrders={workOrders}
+                  bells={bells}
+                  highRiskCount={highRiskCount}
+                  media={inspectionMedia}
+                  onCreateWorkOrder={createWorkOrder}
+                  onAssignWorkOrder={assignWorkOrder}
+                  onStartWorkOrder={startWorkOrder}
+                  onCompleteWorkOrder={completeWorkOrder}
+                  onReviewWorkOrder={reviewWorkOrder}
+                  onBatchCreateFromHighRisk={batchCreateWorkOrdersFromHighRisk}
+                  onAddMediaToWorkOrder={addMediaToWorkOrder}
+                  onCreateFromRisk={createWorkOrderFromRisk}
+                />
+              )}
+
+              {maintenanceTab === 'statistics' && (
+                <StatisticsDashboard
+                  statistics={getStatistics()}
+                  riskComparisons={getRiskComparisons()}
+                />
+              )}
+            </Stack>
           )}
         </Stack>
       </Container>
