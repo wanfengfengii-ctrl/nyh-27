@@ -51,23 +51,17 @@ export function BellEditor({ bell, allowedDeviation, onUpdate, onRemove }: BellE
 
   const handleTargetFreqChange = (value: number | '') => {
     const num = typeof value === 'number' ? value : 0;
-    if (num > 0) {
-      onUpdate(bell.id, { targetFrequency: num });
-    }
+    onUpdate(bell.id, { targetFrequency: num });
   };
 
   const handleMeasuredFreqChange = (value: number | '') => {
     const num = typeof value === 'number' ? value : 0;
-    if (num > 0) {
-      onUpdate(bell.id, { measuredFrequency: num });
-    }
+    onUpdate(bell.id, { measuredFrequency: num });
   };
 
   const handleWeightChange = (value: number | '') => {
     const num = typeof value === 'number' ? value : 0;
-    if (num > 0) {
-      onUpdate(bell.id, { weight: num });
-    }
+    onUpdate(bell.id, { weight: num });
   };
 
   const handleStrikePositionChange = (value: string | null) => {

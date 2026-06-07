@@ -59,7 +59,12 @@ export function useBellSet() {
   }, []);
 
   const setAllowedDeviation = useCallback((value: number) => {
-    setState((prev) => ({ ...prev, allowedDeviation: value }));
+    setState((prev) => ({
+      ...prev,
+      allowedDeviation: value,
+      confirmed: false,
+      confirmedAt: null,
+    }));
   }, []);
 
   const selectedBell = state.bells.find((b) => b.id === state.selectedBellId) ?? null;
