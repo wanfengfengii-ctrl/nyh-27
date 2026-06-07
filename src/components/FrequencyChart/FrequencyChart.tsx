@@ -25,13 +25,6 @@ const schemeColors = [
 ];
 
 export function FrequencyChart({ bells, strikePosition, compareSchemes = [] }: FrequencyChartProps) {
-  const baseData = bells.map((bell) => ({
-    name: bell.name,
-    position: bell.position,
-    [`目标频率`]: bell.frequencies[strikePosition].target,
-    [`实测频率`]: bell.frequencies[strikePosition].measured,
-  }));
-
   const allSchemes = [{ name: '当前方案', bells, colors: schemeColors[0] }].concat(
     compareSchemes.map((s, i) => ({
       name: s.name,
@@ -40,15 +33,32 @@ export function FrequencyChart({ bells, strikePosition, compareSchemes = [] }: F
     }))
   );
 
-  const data = baseData.map((item, idx) => {
-    const combined: any = { ...item };
-    compareSchemes.forEach((scheme, si) => {
-      const bell = scheme.bells[idx];
-      if (bell) {
-        combined[`${scheme.name} 目标`] = bell.frequencies[strikePosition].target;
-        combined[`${scheme.name} 实测`] = bell.frequencies[strikePosition].measured;
+  const allPositions = new Set<number>();
+  allSchemes.forEach((scheme) => {
+    scheme.bells.forEach((bell) => allPositions.add(bell.position));
+  });
+  const sortedPositions = Array.from(allPositions).sort((a, b) => a - b);
+
+  const data = sortedPositions.map((pos) => {
+    const baseBell = bells.find((b) => b.position === pos);
+    const combined: any = {
+      position: pos,
+      name: baseBell ? baseBell.name : `第${pos}位`,
+    };
+
+    if (baseBell) {
+      combined['目标频率'] = baseBell.frequencies[strikePosition].target;
+      combined['实测频率'] = baseBell.frequencies[strikePosition].measured;
+    }
+
+    compareSchemes.forEach((scheme) => {
+      const schemeBell = scheme.bells.find((b) => b.position === pos);
+      if (schemeBell) {
+        combined[`${scheme.name} 目标`] = schemeBell.frequencies[strikePosition].target;
+        combined[`${scheme.name} 实测`] = schemeBell.frequencies[strikePosition].measured;
       }
     });
+
     return combined;
   });
 

@@ -93,9 +93,9 @@ export function BellEditor({
     startRecording();
   };
 
-  const handleStopRecording = () => {
+  const handleStopRecording = (apply: boolean = false) => {
     const freq = stopRecording();
-    if (freq && freq > 0) {
+    if (apply && freq && freq > 0) {
       onUpdateFrequency(bell.id, recordingPos, 'measured', Math.round(freq * 100) / 100);
     }
   };
@@ -104,6 +104,10 @@ export function BellEditor({
     if (detectedFrequency && detectedFrequency > 0) {
       onUpdateFrequency(bell.id, recordingPos, 'measured', Math.round(detectedFrequency * 100) / 100);
     }
+  };
+
+  const handleCancelRecording = () => {
+    stopRecording();
   };
 
   const targetFreqValid = validateFrequency(currentFreq.target);
@@ -244,7 +248,7 @@ export function BellEditor({
                           variant={isRecording && recordingPos === pos ? 'filled' : 'light'}
                           onClick={
                             isRecording && recordingPos === pos
-                              ? handleStopRecording
+                              ? () => handleStopRecording(false)
                               : () => handleStartRecording(pos)
                           }
                         >
@@ -278,14 +282,14 @@ export function BellEditor({
                             variant="light"
                             color="green"
                             leftSection={<Check size={14} />}
-                            onClick={handleStopRecording}
+                            onClick={() => handleStopRecording(true)}
                           >
                             应用此频率
                           </Button>
                           <Button
                             size="xs"
                             variant="light"
-                            onClick={handleStopRecording}
+                            onClick={handleCancelRecording}
                           >
                             取消
                           </Button>

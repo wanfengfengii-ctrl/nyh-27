@@ -29,19 +29,31 @@ export function DeviationChart({
   strikePosition,
   compareSchemes = [],
 }: DeviationChartProps) {
-  const data = bells.map((bell, idx) => {
-    const cents = getBellCents(bell, strikePosition);
-    const isOutOfRange = Math.abs(cents) > allowedDeviation;
+  const allSchemes = [{ name: '当前方案', bells }].concat(
+    compareSchemes.map((s) => ({ name: s.name, bells: s.bells }))
+  );
+
+  const allPositions = new Set<number>();
+  allSchemes.forEach((scheme) => {
+    scheme.bells.forEach((bell) => allPositions.add(bell.position));
+  });
+  const sortedPositions = Array.from(allPositions).sort((a, b) => a - b);
+
+  const data = sortedPositions.map((pos) => {
+    const baseBell = bells.find((b) => b.position === pos);
+    const baseCents = baseBell ? getBellCents(baseBell, strikePosition) : 0;
+    const isOutOfRange = Math.abs(baseCents) > allowedDeviation;
+
     const result: any = {
-      name: bell.name,
-      position: bell.position,
-      当前方案: Number(cents.toFixed(2)),
+      position: pos,
+      name: baseBell ? baseBell.name : `第${pos}位`,
+      当前方案: baseBell ? Number(baseCents.toFixed(2)) : null,
       isOutOfRange,
-      direction: cents > 0 ? '偏高' : cents < 0 ? '偏低' : '准确',
+      direction: baseCents > 0 ? '偏高' : baseCents < 0 ? '偏低' : '准确',
     };
 
     compareSchemes.forEach((scheme) => {
-      const schemeBell = scheme.bells[idx];
+      const schemeBell = scheme.bells.find((b) => b.position === pos);
       if (schemeBell) {
         const schemeCents = getBellCents(schemeBell, strikePosition);
         result[scheme.name] = Number(schemeCents.toFixed(2));
@@ -51,10 +63,13 @@ export function DeviationChart({
     return result;
   });
 
-  const outOfRangeCount = data.filter((d) => d.isOutOfRange).length;
+  const outOfRangeCount = data.filter((d) => d.isOutOfRange && d['当前方案'] !== null).length;
   const maxDeviation = Math.max(
     ...data.map((d) => {
-      let max = Math.abs(d['当前方案']);
+      let max = 0;
+      if (d['当前方案'] !== null) {
+        max = Math.abs(d['当前方案']);
+      }
       compareSchemes.forEach((s) => {
         if (d[s.name] !== undefined) {
           max = Math.max(max, Math.abs(d[s.name]));

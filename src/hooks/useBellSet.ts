@@ -116,7 +116,14 @@ export function useBellSet() {
       setState((prev) => ({
         ...prev,
         schemes: prev.schemes.map((s) =>
-          s.id === schemeId ? { ...s, bells: updater(s.bells), updatedAt: new Date() } : s
+          s.id === schemeId
+            ? {
+                ...s,
+                bells: updater(s.bells),
+                updatedAt: new Date(),
+                reviewStatus: 'pending' as const,
+              }
+            : s
         ),
       }));
     },
