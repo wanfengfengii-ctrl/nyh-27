@@ -1,4 +1,4 @@
-import { Paper, Title, Text } from '@mantine/core';
+import { Paper, Title, Text, Badge, Group } from '@mantine/core';
 import {
   LineChart,
   Line,
@@ -9,26 +9,55 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import type { Bell } from '../../types/bell';
+import type { Bell, BellScheme, StrikePosition } from '../../types/bell';
 
 interface FrequencyChartProps {
   bells: Bell[];
+  strikePosition: StrikePosition;
+  compareSchemes?: BellScheme[];
 }
 
-export function FrequencyChart({ bells }: FrequencyChartProps) {
-  const data = bells.map((bell) => ({
+const schemeColors = [
+  { main: '#C9A962', target: '#9a7d3d' },
+  { main: '#5C7A9A', target: '#3d5a7a' },
+  { main: '#7A9A5C', target: '#5a7a3d' },
+  { main: '#9A5C7A', target: '#7a3d5a' },
+];
+
+export function FrequencyChart({ bells, strikePosition, compareSchemes = [] }: FrequencyChartProps) {
+  const baseData = bells.map((bell) => ({
     name: bell.name,
     position: bell.position,
-    目标频率: bell.targetFrequency,
-    实测频率: bell.measuredFrequency,
+    [`目标频率`]: bell.frequencies[strikePosition].target,
+    [`实测频率`]: bell.frequencies[strikePosition].measured,
   }));
+
+  const allSchemes = [{ name: '当前方案', bells, colors: schemeColors[0] }].concat(
+    compareSchemes.map((s, i) => ({
+      name: s.name,
+      bells: s.bells,
+      colors: schemeColors[(i + 1) % schemeColors.length],
+    }))
+  );
+
+  const data = baseData.map((item, idx) => {
+    const combined: any = { ...item };
+    compareSchemes.forEach((scheme, si) => {
+      const bell = scheme.bells[idx];
+      if (bell) {
+        combined[`${scheme.name} 目标`] = bell.frequencies[strikePosition].target;
+        combined[`${scheme.name} 实测`] = bell.frequencies[strikePosition].measured;
+      }
+    });
+    return combined;
+  });
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <Paper p="sm" shadow="sm" withBorder style={{ background: 'white' }}>
+        <Paper p="sm" shadow="sm" withBorder style={{ background: 'white', maxWidth: 280 }}>
           <Text size="sm" fw={600} mb="xs">
-            {label}
+            {label} · {strikePosition}
           </Text>
           {payload.map((entry: any, index: number) => (
             <Text key={index} size="xs" style={{ color: entry.color }}>
@@ -43,12 +72,22 @@ export function FrequencyChart({ bells }: FrequencyChartProps) {
 
   return (
     <Paper p="md" radius="md" withBorder>
-      <Title order={4} size="h5" mb="md">
-        频率曲线
-      </Title>
-      <Text size="xs" c="dimmed" mb="sm">
-        目标频率与实测频率对比
-      </Text>
+      <Group justify="space-between" mb="md">
+        <div>
+          <Title order={4} size="h5">
+            频率曲线
+          </Title>
+          <Text size="xs" c="dimmed">
+            {strikePosition} · 目标频率与实测频率对比
+          </Text>
+        </div>
+        {compareSchemes.length > 0 && (
+          <Badge size="sm" color="blue" variant="light">
+            {compareSchemes.length + 1} 方案对比
+          </Badge>
+        )}
+      </Group>
+
       <div style={{ width: '100%', height: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -68,7 +107,8 @@ export function FrequencyChart({ bells }: FrequencyChartProps) {
               label={{ value: 'Hz', angle: -90, position: 'insideLeft', fontSize: 12 }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+
             <Line
               type="monotone"
               dataKey="目标频率"
@@ -86,6 +126,30 @@ export function FrequencyChart({ bells }: FrequencyChartProps) {
               activeDot={{ r: 5 }}
               strokeDasharray="5 5"
             />
+
+            {compareSchemes.map((scheme, idx) => (
+              <Line
+                key={`${scheme.id}-target`}
+                type="monotone"
+                dataKey={`${scheme.name} 目标`}
+                stroke={schemeColors[(idx + 1) % schemeColors.length].target}
+                strokeWidth={1.5}
+                strokeOpacity={0.7}
+                dot={false}
+              />
+            ))}
+            {compareSchemes.map((scheme, idx) => (
+              <Line
+                key={`${scheme.id}-measured`}
+                type="monotone"
+                dataKey={`${scheme.name} 实测`}
+                stroke={schemeColors[(idx + 1) % schemeColors.length].main}
+                strokeWidth={1.5}
+                strokeOpacity={0.7}
+                strokeDasharray="3 3"
+                dot={false}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>

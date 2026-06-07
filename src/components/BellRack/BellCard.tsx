@@ -2,8 +2,8 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Card, Text, Badge, Group, ActionIcon, useMantineTheme } from '@mantine/core';
 import { Volume2, GripVertical } from 'lucide-react';
-import type { Bell } from '../../types/bell';
-import { getDeviationResult, formatCents } from '../../utils/cents';
+import type { Bell, StrikePosition } from '../../types/bell';
+import { getBellDeviation, formatCents } from '../../utils/cents';
 import { useAudio } from '../../hooks/useAudio';
 import './BellCard.css';
 
@@ -11,13 +11,15 @@ interface BellCardProps {
   bell: Bell;
   selected: boolean;
   allowedDeviation: number;
+  strikePosition: StrikePosition;
   onSelect: (id: string) => void;
 }
 
-export function BellCard({ bell, selected, allowedDeviation, onSelect }: BellCardProps) {
+export function BellCard({ bell, selected, allowedDeviation, strikePosition, onSelect }: BellCardProps) {
   const theme = useMantineTheme();
   const { playBellSound } = useAudio();
-  const deviation = getDeviationResult(bell.targetFrequency, bell.measuredFrequency, allowedDeviation);
+  const deviation = getBellDeviation(bell, strikePosition, allowedDeviation);
+  const freq = bell.frequencies[strikePosition];
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: bell.id,
@@ -31,7 +33,7 @@ export function BellCard({ bell, selected, allowedDeviation, onSelect }: BellCar
     borderStyle: 'solid',
     borderColor: selected ? theme.colors.bronze[5] : theme.colors.bronze[2],
     background: selected ? theme.colors.bronze[0] : theme.white,
-    minWidth: 110,
+    minWidth: 120,
     flex: '0 0 auto',
     cursor: 'pointer',
   };
@@ -40,7 +42,7 @@ export function BellCard({ bell, selected, allowedDeviation, onSelect }: BellCar
 
   const handlePlayClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    playBellSound(bell.measuredFrequency);
+    playBellSound(freq.measured);
   };
 
   return (
@@ -71,12 +73,18 @@ export function BellCard({ bell, selected, allowedDeviation, onSelect }: BellCar
         </ActionIcon>
       </div>
 
-      <Text size="sm" fw={600} lineClamp={1} ta="center" mb="xs">
+      <Text size="sm" fw={600} lineClamp={1} ta="center" mb={4}>
         {bell.name}
       </Text>
 
+      {bell.note && (
+        <Text size="xs" c="dimmed" ta="center" mb={4}>
+          {bell.note}
+        </Text>
+      )}
+
       <Text size="xs" c="dimmed" ta="center">
-        {bell.measuredFrequency.toFixed(2)} Hz
+        {freq.measured.toFixed(1)} Hz
       </Text>
 
       <Group justify="center" mt={6}>
@@ -84,6 +92,10 @@ export function BellCard({ bell, selected, allowedDeviation, onSelect }: BellCar
           {formatCents(deviation.cents)}
         </Badge>
       </Group>
+
+      <Badge size="xs" variant="outline" color="gray" fullWidth mt={6} ta="center">
+        {strikePosition}
+      </Badge>
 
       <div
         style={{

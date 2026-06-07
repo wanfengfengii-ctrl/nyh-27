@@ -9,60 +9,88 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   Cell,
+  Legend,
 } from 'recharts';
-import type { Bell } from '../../types/bell';
-import { calculateCents } from '../../utils/cents';
+import type { Bell, BellScheme, StrikePosition } from '../../types/bell';
+import { getBellCents } from '../../utils/cents';
 
 interface DeviationChartProps {
   bells: Bell[];
   allowedDeviation: number;
+  strikePosition: StrikePosition;
+  compareSchemes?: BellScheme[];
 }
 
-export function DeviationChart({ bells, allowedDeviation }: DeviationChartProps) {
-  const data = bells.map((bell) => {
-    const cents = calculateCents(bell.targetFrequency, bell.measuredFrequency);
+const schemeColors = ['#C9A962', '#5C7A9A', '#7A9A5C', '#9A5C7A'];
+
+export function DeviationChart({
+  bells,
+  allowedDeviation,
+  strikePosition,
+  compareSchemes = [],
+}: DeviationChartProps) {
+  const data = bells.map((bell, idx) => {
+    const cents = getBellCents(bell, strikePosition);
     const isOutOfRange = Math.abs(cents) > allowedDeviation;
-    return {
+    const result: any = {
       name: bell.name,
       position: bell.position,
-      音分偏差: Number(cents.toFixed(2)),
+      当前方案: Number(cents.toFixed(2)),
       isOutOfRange,
       direction: cents > 0 ? '偏高' : cents < 0 ? '偏低' : '准确',
     };
+
+    compareSchemes.forEach((scheme) => {
+      const schemeBell = scheme.bells[idx];
+      if (schemeBell) {
+        const schemeCents = getBellCents(schemeBell, strikePosition);
+        result[scheme.name] = Number(schemeCents.toFixed(2));
+      }
+    });
+
+    return result;
   });
 
   const outOfRangeCount = data.filter((d) => d.isOutOfRange).length;
-  const maxDeviation = Math.max(...data.map((d) => Math.abs(d['音分偏差'])), allowedDeviation);
+  const maxDeviation = Math.max(
+    ...data.map((d) => {
+      let max = Math.abs(d['当前方案']);
+      compareSchemes.forEach((s) => {
+        if (d[s.name] !== undefined) {
+          max = Math.max(max, Math.abs(d[s.name]));
+        }
+      });
+      return max;
+    }),
+    allowedDeviation
+  );
   const yDomain = Math.ceil(Math.max(maxDeviation * 1.2, allowedDeviation * 1.5));
-
-  const getBarColor = (entry: any) => {
-    if (entry.isOutOfRange) {
-      return '#B8453A';
-    }
-    return entry['音分偏差'] >= 0 ? '#5C7A9A' : '#4A7C59';
-  };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const entry = payload[0].payload;
       return (
-        <Paper p="sm" shadow="sm" withBorder style={{ background: 'white' }}>
+        <Paper p="sm" shadow="sm" withBorder style={{ background: 'white', maxWidth: 280 }}>
           <Text size="sm" fw={600} mb="xs">
-            {label}
+            {label} · {strikePosition}
           </Text>
-          <Text size="xs">
-            音分偏差: {entry['音分偏差'] > 0 ? '+' : ''}
-            {entry['音分偏差']} ct
-          </Text>
-          <Text size="xs" c={entry.isOutOfRange ? 'red' : 'dimmed'}>
-            {entry.direction}
-            {entry.isOutOfRange ? ' · 超限' : ''}
-          </Text>
+          {payload.map((entry: any, index: number) => {
+            const value = entry.value;
+            const isOutOfRange = Math.abs(value) > allowedDeviation;
+            return (
+              <Text key={index} size="xs" style={{ color: entry.color }}>
+                {entry.name}: {value > 0 ? '+' : ''}
+                {value} ct
+                {isOutOfRange && ' · 超限'}
+              </Text>
+            );
+          })}
         </Paper>
       );
     }
     return null;
   };
+
+  const hasCompare = compareSchemes.length > 0;
 
   return (
     <Paper p="md" radius="md" withBorder>
@@ -72,7 +100,7 @@ export function DeviationChart({ bells, allowedDeviation }: DeviationChartProps)
             偏差分布
           </Title>
           <Text size="xs" c="dimmed">
-            各编钟音分偏差柱状图
+            {strikePosition} · 各编钟音分偏差
           </Text>
         </div>
         <Group gap="xs">
@@ -82,6 +110,11 @@ export function DeviationChart({ bells, allowedDeviation }: DeviationChartProps)
           {outOfRangeCount > 0 && (
             <Badge size="sm" color="red" variant="filled">
               超限 {outOfRangeCount}
+            </Badge>
+          )}
+          {hasCompare && (
+            <Badge size="sm" color="blue" variant="light">
+              {compareSchemes.length + 1} 方案
             </Badge>
           )}
         </Group>
@@ -106,14 +139,46 @@ export function DeviationChart({ bells, allowedDeviation }: DeviationChartProps)
               label={{ value: '音分 (ct)', angle: -90, position: 'insideLeft', fontSize: 12 }}
             />
             <Tooltip content={<CustomTooltip />} />
+            {hasCompare && <Legend wrapperStyle={{ fontSize: 11 }} />}
             <ReferenceLine y={0} stroke="#8a7755" strokeWidth={1} />
-            <ReferenceLine y={allowedDeviation} stroke="#B8453A" strokeDasharray="3 3" strokeWidth={1} label={{ value: `+${allowedDeviation}`, fontSize: 10, fill: '#B8453A' }} />
-            <ReferenceLine y={-allowedDeviation} stroke="#B8453A" strokeDasharray="3 3" strokeWidth={1} label={{ value: `-${allowedDeviation}`, fontSize: 10, fill: '#B8453A' }} />
-            <Bar dataKey="音分偏差" radius={[4, 4, 0, 0]}>
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={getBarColor(entry)} />
-              ))}
-            </Bar>
+            <ReferenceLine
+              y={allowedDeviation}
+              stroke="#B8453A"
+              strokeDasharray="3 3"
+              strokeWidth={1}
+              label={{ value: `+${allowedDeviation}`, fontSize: 10, fill: '#B8453A' }}
+            />
+            <ReferenceLine
+              y={-allowedDeviation}
+              stroke="#B8453A"
+              strokeDasharray="3 3"
+              strokeWidth={1}
+              label={{ value: `-${allowedDeviation}`, fontSize: 10, fill: '#B8453A' }}
+            />
+
+            {hasCompare ? (
+              <>
+                <Bar dataKey="当前方案" fill={schemeColors[0]} radius={[4, 4, 0, 0]} />
+                {compareSchemes.map((scheme, idx) => (
+                  <Bar
+                    key={scheme.id}
+                    dataKey={scheme.name}
+                    fill={schemeColors[(idx + 1) % schemeColors.length]}
+                    fillOpacity={0.6}
+                    radius={[4, 4, 0, 0]}
+                  />
+                ))}
+              </>
+            ) : (
+              <Bar dataKey="当前方案" radius={[4, 4, 0, 0]}>
+                {data.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.isOutOfRange ? '#B8453A' : entry['当前方案'] >= 0 ? '#5C7A9A' : '#4A7C59'}
+                  />
+                ))}
+              </Bar>
+            )}
           </BarChart>
         </ResponsiveContainer>
       </div>

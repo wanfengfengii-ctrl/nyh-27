@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Paper,
   Title,
@@ -12,23 +13,41 @@ import {
   Divider,
   Alert,
   ActionIcon,
+  Tabs,
+  Progress,
+  Tooltip,
 } from '@mantine/core';
-import { Volume2, Trash2, Info } from 'lucide-react';
+import { Volume2, Trash2, Info, Mic, MicOff, Check, RefreshCw } from 'lucide-react';
 import type { Bell, StrikePosition } from '../../types/bell';
 import { STRIKE_POSITIONS } from '../../types/bell';
-import { getDeviationResult, formatCents } from '../../utils/cents';
+import { getBellDeviation, formatCents, formatFrequency } from '../../utils/cents';
 import { validateFrequency, validateWeight } from '../../utils/validation';
 import { useAudio } from '../../hooks/useAudio';
+import { usePitchDetection } from '../../hooks/usePitchDetection';
 
 interface BellEditorProps {
   bell: Bell | null;
   allowedDeviation: number;
+  currentStrikePosition: StrikePosition;
   onUpdate: (id: string, updates: Partial<Bell>) => void;
+  onUpdateFrequency: (bellId: string, pos: StrikePosition, type: 'target' | 'measured', value: number) => void;
   onRemove: (id: string) => void;
+  onStrikePositionChange: (pos: StrikePosition) => void;
 }
 
-export function BellEditor({ bell, allowedDeviation, onUpdate, onRemove }: BellEditorProps) {
+export function BellEditor({
+  bell,
+  allowedDeviation,
+  currentStrikePosition,
+  onUpdate,
+  onUpdateFrequency,
+  onRemove,
+  onStrikePositionChange,
+}: BellEditorProps) {
   const { playBellSound } = useAudio();
+  const { isRecording, duration, detectedFrequency, confidence, startRecording, stopRecording } =
+    usePitchDetection();
+  const [recordingPos, setRecordingPos] = useState<StrikePosition>('正鼓');
 
   if (!bell) {
     return (
@@ -43,20 +62,11 @@ export function BellEditor({ bell, allowedDeviation, onUpdate, onRemove }: BellE
     );
   }
 
-  const deviation = getDeviationResult(bell.targetFrequency, bell.measuredFrequency, allowedDeviation);
+  const deviation = getBellDeviation(bell, currentStrikePosition, allowedDeviation);
+  const currentFreq = bell.frequencies[currentStrikePosition];
 
   const handleNameChange = (value: string) => {
     onUpdate(bell.id, { name: value });
-  };
-
-  const handleTargetFreqChange = (value: number | '') => {
-    const num = typeof value === 'number' ? value : 0;
-    onUpdate(bell.id, { targetFrequency: num });
-  };
-
-  const handleMeasuredFreqChange = (value: number | '') => {
-    const num = typeof value === 'number' ? value : 0;
-    onUpdate(bell.id, { measuredFrequency: num });
   };
 
   const handleWeightChange = (value: number | '') => {
@@ -64,15 +74,47 @@ export function BellEditor({ bell, allowedDeviation, onUpdate, onRemove }: BellE
     onUpdate(bell.id, { weight: num });
   };
 
-  const handleStrikePositionChange = (value: string | null) => {
-    if (value) {
-      onUpdate(bell.id, { strikePosition: value as StrikePosition });
+  const handleNoteChange = (value: string) => {
+    onUpdate(bell.id, { note: value });
+  };
+
+  const handleTargetFreqChange = (pos: StrikePosition, value: number | string) => {
+    const num = typeof value === 'number' ? value : parseFloat(value) || 0;
+    onUpdateFrequency(bell.id, pos, 'target', num);
+  };
+
+  const handleMeasuredFreqChange = (pos: StrikePosition, value: number | string) => {
+    const num = typeof value === 'number' ? value : parseFloat(value) || 0;
+    onUpdateFrequency(bell.id, pos, 'measured', num);
+  };
+
+  const handleStartRecording = (pos: StrikePosition) => {
+    setRecordingPos(pos);
+    startRecording();
+  };
+
+  const handleStopRecording = () => {
+    const freq = stopRecording();
+    if (freq && freq > 0) {
+      onUpdateFrequency(bell.id, recordingPos, 'measured', Math.round(freq * 100) / 100);
     }
   };
 
-  const targetFreqValid = validateFrequency(bell.targetFrequency);
-  const measuredFreqValid = validateFrequency(bell.measuredFrequency);
+  const handleApplyDetected = () => {
+    if (detectedFrequency && detectedFrequency > 0) {
+      onUpdateFrequency(bell.id, recordingPos, 'measured', Math.round(detectedFrequency * 100) / 100);
+    }
+  };
+
+  const targetFreqValid = validateFrequency(currentFreq.target);
+  const measuredFreqValid = validateFrequency(currentFreq.measured);
   const weightValid = validateWeight(bell.weight);
+
+  const getConfidenceColor = (conf: number) => {
+    if (conf >= 80) return 'green';
+    if (conf >= 50) return 'yellow';
+    return 'red';
+  };
 
   return (
     <Paper p="md" radius="md" withBorder>
@@ -81,7 +123,12 @@ export function BellEditor({ bell, allowedDeviation, onUpdate, onRemove }: BellE
           编钟详情
         </Title>
         <Group gap="xs">
-          <ActionIcon variant="light" color="bronze" onClick={() => playBellSound(bell.measuredFrequency)} title="播放音高">
+          <ActionIcon
+            variant="light"
+            color="bronze"
+            onClick={() => playBellSound(currentFreq.measured)}
+            title="播放音高"
+          >
             <Volume2 size={18} />
           </ActionIcon>
           <ActionIcon variant="light" color="red" onClick={() => onRemove(bell.id)} title="删除编钟">
@@ -118,77 +165,215 @@ export function BellEditor({ bell, allowedDeviation, onUpdate, onRemove }: BellE
           placeholder="请输入编钟名称"
         />
 
-        <Divider label="频率参数" labelPosition="center" />
-
-        <NumberInput
-          label="目标频率"
-          description="理想音高频率 (Hz)"
-          value={bell.targetFrequency}
-          onChange={handleTargetFreqChange}
-          min={0}
-          decimalScale={2}
-          fixedDecimalScale
-          error={!targetFreqValid ? '频率必须大于零' : false}
-          rightSection={<Text size="xs" c="dimmed">Hz</Text>}
-        />
-
-        <NumberInput
-          label="实测频率"
-          description="实际测量的频率 (Hz)"
-          value={bell.measuredFrequency}
-          onChange={handleMeasuredFreqChange}
-          min={0}
-          decimalScale={2}
-          fixedDecimalScale
-          error={!measuredFreqValid ? '频率必须大于零' : false}
-          rightSection={<Text size="xs" c="dimmed">Hz</Text>}
-        />
-
         <Group grow>
-          <div>
-            <Text size="xs" c="dimmed" mb={4}>
-              音分偏差
-            </Text>
-            <Text size="lg" fw={600} c={deviation.isOutOfRange ? 'red' : 'bronze.6'}>
-              {formatCents(deviation.cents)}
-            </Text>
-          </div>
-          <div>
-            <Text size="xs" c="dimmed" mb={4}>
-              偏差方向
-            </Text>
-            <Text size="lg" fw={600}>
-              {deviation.direction === 'sharp' ? '偏高' : deviation.direction === 'flat' ? '偏低' : '准确'}
-            </Text>
-          </div>
+          <NumberInput
+            label="重量"
+            description="编钟重量 (kg)"
+            value={bell.weight}
+            onChange={handleWeightChange}
+            min={0}
+            decimalScale={2}
+            fixedDecimalScale
+            error={!weightValid ? '重量必须大于零' : false}
+            rightSection={<Text size="xs" c="dimmed">kg</Text>}
+          />
+          <TextInput
+            label="音名"
+            description="音名标记"
+            value={bell.note || ''}
+            onChange={(e) => handleNoteChange(e.target.value)}
+            placeholder="如 C4, D5"
+          />
         </Group>
 
-        <Divider label="物理参数" labelPosition="center" />
+        <Divider label="频率参数（按敲击位置）" labelPosition="center" />
 
-        <NumberInput
-          label="重量"
-          description="编钟重量 (kg)"
-          value={bell.weight}
-          onChange={handleWeightChange}
-          min={0}
-          decimalScale={2}
-          fixedDecimalScale
-          error={!weightValid ? '重量必须大于零' : false}
-          rightSection={<Text size="xs" c="dimmed">kg</Text>}
-        />
+        <Tabs value={currentStrikePosition} onChange={(v) => v && onStrikePositionChange(v as StrikePosition)}>
+          <Tabs.List grow>
+            {STRIKE_POSITIONS.map((pos) => {
+              const d = getBellDeviation(bell, pos, allowedDeviation);
+              return (
+                <Tabs.Tab
+                  key={pos}
+                  value={pos}
+                  rightSection={
+                    <Badge
+                      size="xs"
+                      color={d.isOutOfRange ? 'red' : 'gray'}
+                      variant={d.isOutOfRange ? 'filled' : 'light'}
+                    >
+                      {formatCents(d.cents)}
+                    </Badge>
+                  }
+                >
+                  {pos}
+                </Tabs.Tab>
+              );
+            })}
+          </Tabs.List>
+
+          {STRIKE_POSITIONS.map((pos) => (
+            <Tabs.Panel key={pos} value={pos} pt="md">
+              <Stack gap="sm">
+                <Group grow>
+                  <NumberInput
+                    label="目标频率"
+                    description="理想音高频率"
+                    value={bell.frequencies[pos].target}
+                    onChange={(v) => handleTargetFreqChange(pos, v)}
+                    min={0}
+                    decimalScale={2}
+                    fixedDecimalScale
+                    size="sm"
+                    rightSection={<Text size="xs" c="dimmed">Hz</Text>}
+                  />
+                  <NumberInput
+                    label="实测频率"
+                    description="实际测量的频率"
+                    value={bell.frequencies[pos].measured}
+                    onChange={(v) => handleMeasuredFreqChange(pos, v)}
+                    min={0}
+                    decimalScale={2}
+                    fixedDecimalScale
+                    size="sm"
+                    rightSection={
+                      <Tooltip label="录音识别">
+                        <ActionIcon
+                          size="sm"
+                          color={isRecording && recordingPos === pos ? 'red' : 'bronze'}
+                          variant={isRecording && recordingPos === pos ? 'filled' : 'light'}
+                          onClick={
+                            isRecording && recordingPos === pos
+                              ? handleStopRecording
+                              : () => handleStartRecording(pos)
+                          }
+                        >
+                          {isRecording && recordingPos === pos ? <MicOff size={14} /> : <Mic size={14} />}
+                        </ActionIcon>
+                      </Tooltip>
+                    }
+                  />
+                </Group>
+
+                {isRecording && recordingPos === pos && (
+                  <Paper p="sm" bg="dark.0" radius="sm">
+                    <Group justify="space-between" mb="xs">
+                      <Badge size="sm" color="red" variant="filled">
+                        录音中 {duration.toFixed(1)}s
+                      </Badge>
+                      {detectedFrequency && (
+                        <Badge size="sm" color={getConfidenceColor(confidence)} variant="light">
+                          置信度 {confidence.toFixed(0)}%
+                        </Badge>
+                      )}
+                    </Group>
+                    {detectedFrequency && (
+                      <>
+                        <Text size="lg" fw={600} ta="center" mb="xs">
+                          {detectedFrequency.toFixed(2)} Hz
+                        </Text>
+                        <Group justify="center" mb="xs">
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="green"
+                            leftSection={<Check size={14} />}
+                            onClick={handleStopRecording}
+                          >
+                            应用此频率
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="light"
+                            onClick={handleStopRecording}
+                          >
+                            取消
+                          </Button>
+                        </Group>
+                      </>
+                    )}
+                    <Progress
+                      size="xs"
+                      value={Math.min(100, (duration / 3) * 100)}
+                      color="red"
+                      striped
+                      animated
+                    />
+                    <Text size="xs" c="dimmed" ta="center" mt="xs">
+                      敲击编钟以识别主频，建议录制 2-3 秒
+                    </Text>
+                  </Paper>
+                )}
+
+                {!isRecording && detectedFrequency && recordingPos === pos && (
+                  <Alert icon={<Check size={14} />} color="green">
+                    <Group justify="space-between">
+                      <Text size="sm">
+                        上次识别: {detectedFrequency.toFixed(2)} Hz（置信度 {confidence.toFixed(0)}%）
+                      </Text>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="green"
+                        onClick={handleApplyDetected}
+                      >
+                        应用
+                      </Button>
+                    </Group>
+                  </Alert>
+                )}
+
+                <Group grow>
+                  <div>
+                    <Text size="xs" c="dimmed" mb={4}>
+                      音分偏差
+                    </Text>
+                    <Text
+                      size="md"
+                      fw={600}
+                      c={deviation.isOutOfRange ? 'red' : 'bronze.6'}
+                    >
+                      {formatCents(getBellDeviation(bell, pos, allowedDeviation).cents)}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text size="xs" c="dimmed" mb={4}>
+                      偏差方向
+                    </Text>
+                    <Text size="md" fw={600}>
+                      {getBellDeviation(bell, pos, allowedDeviation).direction === 'sharp'
+                        ? '偏高'
+                        : getBellDeviation(bell, pos, allowedDeviation).direction === 'flat'
+                        ? '偏低'
+                        : '准确'}
+                    </Text>
+                  </div>
+                </Group>
+              </Stack>
+            </Tabs.Panel>
+          ))}
+        </Tabs>
+
+        <Divider label="当前敲击位置" labelPosition="center" />
 
         <Select
-          label="敲击位置"
-          description="测量时的敲击位置"
+          label="默认敲击位置"
+          description="当前显示和计算使用的敲击位置"
           value={bell.strikePosition}
-          onChange={handleStrikePositionChange}
+          onChange={(v) => v && onUpdate(bell.id, { strikePosition: v as StrikePosition })}
           data={STRIKE_POSITIONS.map((p) => ({ value: p, label: p }))}
         />
       </Stack>
 
       <Group mt="xl">
-        <Button fullWidth variant="light" color="bronze" onClick={() => playBellSound(bell.measuredFrequency)} leftSection={<Volume2 size={16} />}>
-          试听音高
+        <Button
+          fullWidth
+          variant="light"
+          color="bronze"
+          onClick={() => playBellSound(currentFreq.measured)}
+          leftSection={<Volume2 size={16} />}
+        >
+          试听 {currentStrikePosition} 音高
         </Button>
       </Group>
     </Paper>
