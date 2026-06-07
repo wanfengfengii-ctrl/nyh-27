@@ -5,12 +5,13 @@ import type {
   BellScheme,
   StrikePosition,
   OperationHistory,
-  ReviewLog,
   ReviewStatus,
   OperationField,
 } from '../types/bell';
 import { mockSchemes, createEmptyBell } from '../data/mockBells';
 import { getBellCents, isBellOutOfRange } from '../utils/cents';
+import { generateId } from '../utils/common';
+import { applyReviewToScheme, canExport, resetReviewStatus } from '../utils/review';
 
 const initialSchemes: BellScheme[] = mockSchemes.map((s, i) => ({
   ...s,
@@ -29,8 +30,15 @@ const initialState: BellSetState = {
   compareSchemeIds: [],
 };
 
-function generateId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+function createOperationHistory(
+  schemeId: string,
+  history: Omit<OperationHistory, 'id' | 'timestamp'>
+): OperationHistory {
+  return {
+    ...history,
+    id: generateId('hist'),
+    timestamp: new Date(),
+  };
 }
 
 export function useBellSet() {
@@ -84,7 +92,14 @@ export function useBellSet() {
     });
 
     return result;
-  }, [bells, state.filterOutOfRange, state.sortBy, state.sortOrder, state.currentStrikePosition, state.allowedDeviation]);
+  }, [
+    bells,
+    state.filterOutOfRange,
+    state.sortBy,
+    state.sortOrder,
+    state.currentStrikePosition,
+    state.allowedDeviation,
+  ]);
 
   const addOperationHistory = useCallback(
     (schemeId: string, history: Omit<OperationHistory, 'id' | 'timestamp'>) => {
@@ -94,14 +109,7 @@ export function useBellSet() {
           s.id === schemeId
             ? {
                 ...s,
-                operationHistory: [
-                  {
-                    ...history,
-                    id: generateId('hist'),
-                    timestamp: new Date(),
-                  },
-                  ...s.operationHistory,
-                ],
+                operationHistory: [createOperationHistory(schemeId, history), ...s.operationHistory],
                 updatedAt: new Date(),
               }
             : s
@@ -118,10 +126,9 @@ export function useBellSet() {
         schemes: prev.schemes.map((s) =>
           s.id === schemeId
             ? {
-                ...s,
+                ...resetReviewStatus(s),
                 bells: updater(s.bells),
                 updatedAt: new Date(),
-                reviewStatus: 'pending' as const,
               }
             : s
         ),
@@ -442,26 +449,10 @@ export function useBellSet() {
 
   const addReviewLog = useCallback(
     (schemeId: string, status: ReviewStatus, comment: string, reviewer: string = '当前用户') => {
-      const log: ReviewLog = {
-        id: generateId('review'),
-        timestamp: new Date(),
-        status,
-        comment,
-        reviewer,
-        schemeId,
-      };
-
       setState((prev) => ({
         ...prev,
         schemes: prev.schemes.map((s) =>
-          s.id === schemeId
-            ? {
-                ...s,
-                reviewStatus: status,
-                reviewLogs: [log, ...s.reviewLogs],
-                updatedAt: new Date(),
-              }
-            : s
+          s.id === schemeId ? applyReviewToScheme(s, status, comment, reviewer) : s
         ),
       }));
     },
@@ -487,8 +478,8 @@ export function useBellSet() {
     setState((prev) => ({ ...prev, sortOrder: value }));
   }, []);
 
-  const canExport = useMemo(() => {
-    return activeScheme?.reviewStatus === 'approved';
+  const canExportValue = useMemo(() => {
+    return activeScheme ? canExport(activeScheme.reviewStatus) : false;
   }, [activeScheme]);
 
   return {
@@ -507,7 +498,7 @@ export function useBellSet() {
     currentStrikePosition: state.currentStrikePosition,
     compareSchemeIds: state.compareSchemeIds,
     compareSchemes,
-    canExport,
+    canExport: canExportValue,
     operationHistory: activeScheme?.operationHistory ?? [],
     reviewLogs: activeScheme?.reviewLogs ?? [],
     reviewStatus: activeScheme?.reviewStatus ?? 'pending',
